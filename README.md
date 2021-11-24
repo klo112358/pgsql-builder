@@ -71,12 +71,19 @@ Makes the query a `SELECT ... INTO` query.
 stmt.from(table)
 ```
 
-#### join, leftjoin, rightjoin, fulljoin
+#### join, leftjoin, rightjoin, fulljoin, crossjoin
 ```javascript
 stmt.join(table, criteria)
+stmt.leftjoin(table, criteria)
+stmt.rightjoin(table, criteria)
+stmt.fulljoin(table, criteria)
+stmt.crossjoin(table)
 ```
 Add the specified join to the query.
 
 #### where
+```javascript
+stmt.where(criteria)
+```
 
 #### having

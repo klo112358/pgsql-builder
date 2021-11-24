@@ -249,16 +249,22 @@ class Join extends SQLObject {
         this.on = on;
     }
     toString() {
-        return (this.type +
-            " " +
-            strIdent(this.tbl) +
+        const text = this.type + " " + strIdent(this.tbl);
+        if (!this.on) {
+            return text;
+        }
+        return (text +
             " ON " +
             parseWhereClause(this.on, { ident: true }).toString());
     }
     _toParams(values) {
         const r1 = paramIdent(values, this.tbl);
+        const text = this.type + " " + r1;
+        if (!this.on) {
+            return text
+        }
         const r2 = parseWhereClause(this.on, { ident: true })._toParams(values);
-        return this.type + " " + r1 + " ON " + r2;
+        return text + " ON " + r2;
     }
 }
 class Statement extends Aliasable {
@@ -361,6 +367,9 @@ class SelectStatement extends Statement {
     }
     fulljoin(tbl, on) {
         return this._join("FULL JOIN", tbl, on);
+    }
+    crossjoin(tbl) {
+        return this._join("CROSS JOIN", tbl);
     }
     _join(type, tbl, on) {
         if (this._from.length === 0) {
