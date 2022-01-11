@@ -1,6 +1,9 @@
 "use strict";
+Object.defineProperty(exports, '__esModule', { value: true });
+
 const pgf = require("pg-format");
 
+let PREFER_IDENT = false
 function mapObject(obj, fn) {
     return Object.keys(obj).map((k) => fn(obj[k], k));
 }
@@ -13,7 +16,9 @@ function isEmpty(obj) {
     }
     return Object.keys(obj).length === 0;
 }
-
+function isNull(obj) {
+    return obj === null || (obj instanceof Literal && obj.val === null)
+}
 function compact(obj) {
     return Object.keys(obj).reduce((map, k) => {
         const v = obj[k];
@@ -23,7 +28,6 @@ function compact(obj) {
         return map;
     }, {});
 }
-
 function strPlain(val) {
     if (val instanceof SQLObject) {
         return val.toString();
@@ -32,7 +36,6 @@ function strPlain(val) {
         return pgf.string(val);
     }
 }
-
 function paramPlain(values, val) {
     if (val instanceof SQLObject) {
         return val._toParams(values);
@@ -42,6 +45,13 @@ function paramPlain(values, val) {
     }
 }
 function strValue(val, noArray) {
+    if (val instanceof Unknown) {
+        if (PREFER_IDENT && typeof val.val === "string") {
+            return strIdent(val.val)
+        } else {
+            return strValue(val.val, noArray)
+        }
+    }
     if (val instanceof Statement) {
         return "(" + val.toString() + ")";
     }
@@ -61,6 +71,13 @@ function strValue(val, noArray) {
     }
 }
 function paramValue(values, val, noArray) {
+    if (val instanceof Unknown) {
+        if (PREFER_IDENT && typeof val.val === "string") {
+            return paramIdent(values, val.val)
+        } else {
+            return paramValue(values, val.val, noArray)
+        }
+    }
     if (val instanceof Statement) {
         return "(" + val._toParams(values) + ")";
     }
@@ -139,6 +156,9 @@ function paramJsonItem(values, k, v, prefix) {
         paramIdent(values, v));
 }
 function sql(first, ...rest) {
+    if (first instanceof SQLObject) {
+        return first
+    }
     if (typeof first === "string") {
         return new Identifier(first);
     }
@@ -201,6 +221,9 @@ class Literal extends Aliasable {
     }
 }
 sql.val = (str) => {
+    if (str instanceof SQLObject) {
+        return str
+    }
     return new Literal(str);
 };
 class Identifier extends Aliasable {
@@ -219,6 +242,19 @@ class Identifier extends Aliasable {
     }
     _toParams(values) {
         return (this._only ? "ONLY " : "") + paramIdent(values, this.text);
+    }
+}
+class Unknown extends SQLObject {
+    val;
+    constructor(val) {
+        super();
+        this.val = val;
+    }
+    toString() {
+        throw new Error();
+    }
+    _toParams(values) {
+        throw new Error();
     }
 }
 class As extends SQLObject {
@@ -253,9 +289,13 @@ class Join extends SQLObject {
         if (!this.on) {
             return text;
         }
-        return (text +
-            " ON " +
-            parseWhereClause(this.on, { ident: true }).toString());
+        const expr = parseWhereClause(this.on)
+        try {
+            PREFER_IDENT = true;
+            return text + " ON " + expr.toString();
+        } finally {
+            PREFER_IDENT = false;
+        }
     }
     _toParams(values) {
         const r1 = paramIdent(values, this.tbl);
@@ -263,8 +303,13 @@ class Join extends SQLObject {
         if (!this.on) {
             return text
         }
-        const r2 = parseWhereClause(this.on, { ident: true })._toParams(values);
-        return text + " ON " + r2;
+        const expr = parseWhereClause(this.on)
+        try {
+            PREFER_IDENT = true;
+            return text + " ON " + expr._toParams(values);
+        } finally {
+            PREFER_IDENT = false;
+        }
     }
 }
 class Statement extends Aliasable {
@@ -577,11 +622,15 @@ class InsertStatement extends WriteStatement {
     }
     doUpdate(...values) {
         for (const value of values) {
-            mapObject(value, (v, k) => {
-                if (v !== undefined && this._update[k] === undefined) {
-                    this._update[k] = v;
-                }
-            });
+            if (typeof value === "string") {
+                this._update[value] = sql`EXCLUDED.${sql(value)}`
+            } else {
+                mapObject(value, (v, k) => {
+                    if (v !== undefined && this._update[k] === undefined) {
+                        this._update[k] = v;
+                    }
+                });
+            }
         }
         return this;
     }
@@ -827,41 +876,45 @@ class Group extends Expression {
         this.expressions = expressions;
     }
     toString() {
-        const str = this.expressions
+        return this.expressions
             .map((expr) => {
-            if (expr instanceof Group) {
-                return "(" + expr.toString() + ")";
-            }
-            else {
-                return expr.toString();
-            }
-        })
+                const str = expr.toString();
+                if (!str) {
+                    return "";
+                }
+                else if (expr instanceof Group) {
+                    return "(" + str + ")";
+                }
+                else {
+                    return str;
+                }
+            })
+            .filter((x) => x)
             .join(this.op);
-        return str;
     }
     _toParams(values) {
-        const str = this.expressions
+        return this.expressions
             .map((expr) => {
-            if (expr instanceof Group) {
-                return "(" + expr._toParams(values) + ")";
-            }
-            else {
-                return expr._toParams(values);
-            }
-        })
+                const str = expr._toParams(values);
+                if (!str) {
+                    return "";
+                }
+                else if (expr instanceof Group) {
+                    return "(" + str + ")";
+                }
+                else {
+                    return str;
+                }
+            })
+            .filter((x) => x)
             .join(this.op);
-        return str;
     }
 }
 class And extends Group {
     op = " AND ";
     constructor(expressions) {
         super(expressions.flatMap((expr) => {
-            if (expr instanceof And) {
-                return expr.expressions;
-            }
-            else if (expr instanceof Group &&
-                expr.expressions.length <= 1) {
+            if (expr instanceof And || (expr instanceof Group && expr.expressions.length <= 1)) {
                 return expr.expressions;
             }
             return [expr];
@@ -872,11 +925,7 @@ class Or extends Group {
     op = " OR ";
     constructor(expressions) {
         super(expressions.flatMap((expr) => {
-            if (expr instanceof Or) {
-                return expr.expressions;
-            }
-            else if (expr instanceof Group &&
-                expr.expressions.length <= 1) {
+            if (expr instanceof Or || (expr instanceof Group && expr.expressions.length <= 1)) {
                 return expr.expressions;
             }
             return [expr];
@@ -903,7 +952,8 @@ class Not extends Expression {
     }
 }
 sql.not = (...clauses) => {
-    return new Not(new And(clauses.map((c) => parseWhereClause(c))));
+    const exprs = clauses.map((c) => parseWhereClause(c))
+    return new Not(exprs.length === 1 ? exprs[0] : new And(exprs));
 };
 class Exists extends Expression {
     subquery;
@@ -930,15 +980,24 @@ class OpExpression extends Expression {
         this.operation = operation;
     }
     toString() {
+        if (!this.operation.isValid()) {
+            return "";
+        }
         return strIdent(this.column) + " " + this.operation.toString();
     }
     _toParams(values) {
+        if (!this.operation.isValid()) {
+            return "";
+        }
         const r1 = paramIdent(values, this.column);
         const r2 = this.operation._toParams(values);
         return r1 + " " + r2;
     }
 }
 class Operation extends SQLObject {
+    isValid() {
+        return true;
+    }
 }
 class BinaryOp extends Operation {
     op;
@@ -968,27 +1027,19 @@ function binary(toOp) {
         if (args.length === 1) {
             return toOp(args[0]);
         }
-        else if (args.length === 2) {
-            if (args[0] === "ANY" || args[0] === "ALL") {
-                return toOp(args[1], args[0]);
-            }
-            else {
-                return new OpExpression(args[0], toOp(args[1]));
-            }
-        }
         else {
-            return new OpExpression(args[0], toOp(args[2], args[1]));
+            return toOp(args[1], args[0]);
         }
     };
 }
 sql.eq = binary((val, quantifier) => {
-    if (val === null) {
+    if (isNull(val)) {
         return new UnaryOp("IS NULL");
     }
     return new BinaryOp("=", val, quantifier);
 });
 sql.ne = binary((val, quantifier) => {
-    if (val === null) {
+    if (isNull(val)) {
         return new UnaryOp("IS NOT NULL");
     }
     return new BinaryOp("<>", val, quantifier);
@@ -1067,6 +1118,9 @@ class InOp extends Operation {
         this.vals = vals;
         this.not = not;
     }
+    isValid() {
+        return !Array.isArray(this.vals) || this.vals.length > 0;
+    }
     toString() {
         return ((this.not ? "NOT " : "") +
             "IN " +
@@ -1099,7 +1153,6 @@ function parseWhereClause(clause, options) {
         return new RawExpression(clause);
     }
     const or = options?.or || false;
-    const ident = options?.ident || false;
     if (Array.isArray(clause)) {
         if (clause.length === 2 && clause[1] instanceof Operation) {
             return new OpExpression(clause[0], clause[1]);
@@ -1113,11 +1166,11 @@ function parseWhereClause(clause, options) {
         if (val instanceof Operation) {
             return new OpExpression(col, val);
         }
-        else if (val === null) {
+        else if (isNull(val)) {
             return new OpExpression(col, new UnaryOp("IS NULL"));
         }
         else {
-            return new OpExpression(col, new BinaryOp("=", ident && typeof val === "string" ? new Identifier(val) : val));
+            return new OpExpression(col, new BinaryOp("=", new Unknown(val)));
         }
     }));
 }
@@ -1184,4 +1237,4 @@ sql.json = (...data) => {
 sql.escapePattern = (val) => {
     return val.replace(/(\\|%|_)/g, "\\$1");
 };
-module.exports = sql;
+exports.default = sql;

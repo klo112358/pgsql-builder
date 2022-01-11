@@ -40,6 +40,7 @@ export interface SelectStatement extends Statement {
     leftjoin(tbl: any, on: WhereClause): this;
     rightjoin(tbl: any, on: WhereClause): this;
     fulljoin(tbl: any, on: WhereClause): this;
+    crossjoin(tbl: any): this;
     where(...clauses: WhereClause[]): this;
     having(...clauses: WhereClause[]): this;
     group(...columns: any[]): this;
@@ -59,7 +60,7 @@ export interface InsertStatement extends WriteStatement {
     onConflict(...columns: any[]): this;
     constraint(constraint?: any): this;
     doNothing(): this;
-    doUpdate(...values: Record<string, any>[]): this;
+    doUpdate(...values: (string | Record<string, any>)[]): this;
 }
 
 export interface UpdateStatement extends WriteStatement {
@@ -79,8 +80,6 @@ type BinaryQuantifier = "ALL" | "ANY";
 interface BinaryFn {
     (val: any): Operation;
     (quantifier: BinaryQuantifier, val: any): Operation;
-    (col: any, val: any): Expression;
-    (col: any, quantifier: BinaryQuantifier, val: any): Expression;
 }
 
 export interface Operation extends SQLObject {}
