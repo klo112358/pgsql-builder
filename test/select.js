@@ -70,6 +70,12 @@ describe("Select", () => {
         "SELECT * FROM person WHERE (id, name) IN (($1, $2))",
         [1, "John"]
     ))
+    it("Select cross join with and/or", t(
+        sql.select("*").from("person")
+            .crossjoin("company"),
+        "SELECT * FROM person CROSS JOIN company",
+        []
+    ))
     it("Select join with and/or", t(
         sql.select("*").from("person")
             .join("company", sql.or(

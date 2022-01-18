@@ -277,22 +277,21 @@ class As extends SQLObject {
 class Join extends SQLObject {
     type;
     tbl;
-    on;
+    expr;
     constructor(type, tbl, on) {
         super();
         this.type = type;
         this.tbl = tbl;
-        this.on = on;
+        this.expr = on ? parseWhereClause(on) : undefined;
     }
     toString() {
         const text = this.type + " " + strIdent(this.tbl);
-        if (!this.on) {
+        if (!this.expr) {
             return text;
         }
-        const expr = parseWhereClause(this.on)
         try {
             PREFER_IDENT = true;
-            return text + " ON " + expr.toString();
+            return text + " ON " + this.expr.toString();
         } finally {
             PREFER_IDENT = false;
         }
@@ -300,13 +299,12 @@ class Join extends SQLObject {
     _toParams(values) {
         const r1 = paramIdent(values, this.tbl);
         const text = this.type + " " + r1;
-        if (!this.on) {
+        if (!this.expr) {
             return text
         }
-        const expr = parseWhereClause(this.on)
         try {
             PREFER_IDENT = true;
-            return text + " ON " + expr._toParams(values);
+            return text + " ON " + this.expr._toParams(values);
         } finally {
             PREFER_IDENT = false;
         }
