@@ -94,6 +94,23 @@ describe("Select", () => {
         "SELECT * FROM person INNER JOIN company ON NOT (NOT (company_id = company.id) OR (company_id IS NULL AND company.id IS NULL))",
         []
     ))
+    it("Select from custom", t(
+        sql.select("*").from(sql.from("person").crossjoin("company")),
+        "SELECT * FROM person CROSS JOIN company",
+        []
+    ))
+    it("Update from join", t(
+        sql.update("business").set({ name: "ABC" })
+            .from(sql.from("person").crossjoin("company")),
+        "UPDATE business SET name = $1 FROM person CROSS JOIN company",
+        ["ABC"]
+    ))
+    it("Delete using join", t(
+        sql.delete("business")
+            .using(sql.from("person").crossjoin("company")),
+        "DELETE FROM business USING person CROSS JOIN company",
+        []
+    ))
 })
 
 

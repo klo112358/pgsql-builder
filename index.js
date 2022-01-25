@@ -371,30 +371,9 @@ sql.values = (...values) => {
     v.values(...values);
     return v;
 };
-class SelectStatement extends Statement {
-    _columns = [];
+class FromClause extends SQLObject {
     _from = [];
-    _group = [];
-    _order = [];
     _joins = [];
-    _where;
-    _having;
-    _distinct;
-    _into = "";
-    _limit;
-    _offset;
-    select(...columns) {
-        this._columns.push(...columns);
-        return this;
-    }
-    distinct(...cols) {
-        this._distinct = cols;
-        return this;
-    }
-    into(tbl) {
-        this._into = tbl;
-        return this;
-    }
     from(...args) {
         this._from.push(...args);
         return this;
@@ -419,6 +398,91 @@ class SelectStatement extends Statement {
             throw new Error("cannot call join before from");
         }
         this._joins.push([this._from.length - 1, new Join(type, tbl, on)]);
+        return this;
+    }
+    toString() {
+        if (this._from.length > 0) {
+            return this._from
+                .map((f, i) => {
+                    let s = strIdent(f);
+                    for (const [index, join] of this._joins) {
+                        if (index === i) {
+                            s += " " + join.toString();
+                        }
+                    }
+                    return s;
+                })
+                .join(", ");
+        }
+        return "";
+    }
+    _toParams(values) {
+        if (this._from.length > 0) {
+            return this._from
+                .map((f, i) => {
+                    let s = paramIdent(values, f);
+                    for (const [index, join] of this._joins) {
+                        if (index === i) {
+                            s += " " + join._toParams(values);
+                        }
+                    }
+                    return s;
+                })
+                .join(", ");
+        }
+        return "";
+    }
+}
+sql.from = (...args) => {
+    const f = new FromClause();
+    f.from(...args);
+    return f;
+};
+class SelectStatement extends Statement {
+    _columns = [];
+    _from = new FromClause();
+    _group = [];
+    _order = [];
+    _where;
+    _having;
+    _distinct;
+    _into = "";
+    _limit;
+    _offset;
+    select(...columns) {
+        this._columns.push(...columns);
+        return this;
+    }
+    distinct(...cols) {
+        this._distinct = cols;
+        return this;
+    }
+    into(tbl) {
+        this._into = tbl;
+        return this;
+    }
+    from(...args) {
+        this._from.from(...args);
+        return this;
+    }
+    join(tbl, on) {
+        this._from.join(tbl, on);
+        return this;
+    }
+    leftjoin(tbl, on) {
+        this._from.leftjoin(tbl, on);
+        return this;
+    }
+    rightjoin(tbl, on) {
+        this._from.rightjoin(tbl, on);
+        return this;
+    }
+    fulljoin(tbl, on) {
+        this._from.fulljoin(tbl, on);
+        return this;
+    }
+    crossjoin(tbl) {
+        this._from.crossjoin(tbl);
         return this;
     }
     where(...clauses) {
@@ -457,20 +521,9 @@ class SelectStatement extends Statement {
         if (this._into) {
             str += " INTO " + strIdent(this._into);
         }
-        if (this._from.length > 0) {
-            str +=
-                " FROM " +
-                    this._from
-                        .map((f, i) => {
-                        let s = strIdent(f);
-                        for (const [index, join] of this._joins) {
-                            if (index === i) {
-                                s += " " + join.toString();
-                            }
-                        }
-                        return s;
-                    })
-                        .join(", ");
+        const f = this._from.toString();
+        if (f) {
+            str += " FROM " + f;
         }
         if (this._where) {
             const s = this._where.toString();
@@ -515,20 +568,9 @@ class SelectStatement extends Statement {
         if (this._into) {
             str += " INTO " + paramIdent(values, this._into);
         }
-        if (this._from.length > 0) {
-            str +=
-                " FROM " +
-                    this._from
-                        .map((f, i) => {
-                        let s = paramIdent(values, f);
-                        for (const [index, join] of this._joins) {
-                            if (index === i) {
-                                s += " " + join._toParams(values);
-                            }
-                        }
-                        return s;
-                    })
-                        .join(", ");
+        const f = this._from._toParams(values);
+        if (f) {
+            str += " FROM " + f;
         }
         if (this._where) {
             const s = this._where._toParams(values);

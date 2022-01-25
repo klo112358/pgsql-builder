@@ -31,16 +31,19 @@ export interface Values extends SQLObject {
 
 export interface Statement extends Aliasable {}
 
-export interface SelectStatement extends Statement {
-    select(...columns: any[]): this;
-    distinct(...cols: string[]): this;
-    into(tbl: string): this;
-    from(...args: any[]): this;
+export interface FromClause extends SQLObject {
+    from(...args: Table[]): this;
     join(tbl: any, on: WhereClause): this;
     leftjoin(tbl: any, on: WhereClause): this;
     rightjoin(tbl: any, on: WhereClause): this;
     fulljoin(tbl: any, on: WhereClause): this;
     crossjoin(tbl: any): this;
+}
+
+export interface SelectStatement extends Statement, FromClause {
+    select(...columns: any[]): this;
+    distinct(...cols: string[]): this;
+    into(tbl: string): this;
     where(...clauses: WhereClause[]): this;
     having(...clauses: WhereClause[]): this;
     group(...columns: any[]): this;
@@ -97,6 +100,7 @@ declare function sql(parts: TemplateStringsArray, ...args: unknown[]): Plain
 declare namespace sql {
     export const val: (str: any) => Literal;
     export const values: (...values: Record<string, any>[]) => Values;
+    export const from: (...tbl: Table[]) => FromClause;
     export const select: (...columns: any[]) => SelectStatement;
     export const insert: (tbl: Table) => InsertStatement;
     export const update: (tbl: Table) => UpdateStatement;

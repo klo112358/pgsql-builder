@@ -1,6 +1,6 @@
 {
     "name": "pgsql-builder",
-    "version": "0.2.4",
+    "version": "0.2.5",
     "description": "A SQL builder for PostgreSQL.",
     "main": "index.js",
     "typings": "index.d.ts",
